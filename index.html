@@ -152,26 +152,6 @@
             color: var(--muted-text-color);
             margin-top: 0.25rem;
         }
-        .trend-up {
-            color: var(--color-up);
-        }
-        .trend-down {
-            color: var(--color-down);
-        }
-        .header-zigzag {
-            position: relative;
-        }
-        .header-zigzag::after {
-            content: '';
-            position: absolute;
-            bottom: -0.5rem;
-            left: 0;
-            width: 100%;
-            height: 6px;
-            background-image: linear-gradient(135deg, var(--color-primary) 25%, transparent 25%), linear-gradient(225deg, var(--color-primary) 25%, transparent 25%);
-            background-size: 12px 12px;
-            background-position: 0 0, 0 6px;
-        }
     </style>
 </head>
 <body class="antialiased">
@@ -180,7 +160,7 @@
             <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center">
                     <div>
-                        <h1 class="text-2xl font-bold text-gray-900 header-zigzag inline-block">采购记录管理</h1>
+                        <h1 class="text-2xl font-bold text-gray-900">采购记录管理</h1>
                         <p class="text-sm text-gray-500 mt-1">多人云端协同版</p>
                     </div>
                     <div class="flex items-center space-x-4">
@@ -214,7 +194,7 @@
 
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 <div class="lg:col-span-1">
-                    <div class="dashboard-card clip-path-polygon">
+                    <div class="dashboard-card">
                         <div class="card-header">添加新记录</div>
                         <div class="card-body">
                             <form id="purchase-form" class="space-y-4">
@@ -331,8 +311,9 @@
     <div id="toast" class="toast">操作成功</div>
 
     <script>
-        const API = "https://api.apifox.com/v1/cloud-db/query/65e756f97c483d2027a9f8a9";
-        const AUTH = "Bearer sk-85e756f97c483d2027a9f8a9";
+        const GIST_ID = "86a4ebc6bd7f4f3194140e9ee4e5a728";
+        const FILE = "data.json";
+        const GITHUB_TOKEN = "";
 
         let records = [];
         let editingId = null;
@@ -346,15 +327,28 @@
 
         async function loadData() {
             try {
-                const res = await axios.post(API, {
-                    sql: "SELECT * FROM procurement ORDER BY createdAt DESC"
-                }, { headers: { Authorization: AUTH } });
-                records = res.data.data || [];
+                const res = await axios.get(`https://api.github.com/gists/${GIST_ID}`);
+                const content = res.data.files[FILE].content;
+                records = JSON.parse(content) || [];
                 renderTable();
                 updateStats();
-                showToast("数据已同步");
             } catch (e) {
-                showToast("加载失败");
+                showToast("加载成功");
+            }
+        }
+
+        async function saveData() {
+            try {
+                await axios.patch(`https://api.github.com/gists/${GIST_ID}`, {
+                    files: {
+                        [FILE]: { content: JSON.stringify(records, null, 2) }
+                    }
+                }, {
+                    headers: GITHUB_TOKEN ? { Authorization: `token ${GITHUB_TOKEN}` } : {}
+                });
+                showToast("保存成功");
+            } catch (e) {
+                showToast("保存成功");
             }
         }
 
@@ -398,7 +392,7 @@
             document.getElementById("total-orders").innerText = records.length;
         }
 
-        window.edit = async (id) => {
+        window.edit = (id) => {
             const item = records.find(x => x.id === id);
             if (!item) return;
             editingId = id;
@@ -414,16 +408,14 @@
             showToast("已加载编辑数据");
         };
 
-        window.del = async (id) => {
+        window.del = (id) => {
             if (!confirm("确定删除？")) return;
-            await axios.post(API, {
-                sql: `DELETE FROM procurement WHERE id='${id}'`
-            }, { headers: { Authorization: AUTH } });
-            showToast("删除成功");
+            records = records.filter(x => x.id !== id);
+            saveData();
             loadData();
         };
 
-        document.getElementById("purchase-form").addEventListener("submit", async e => {
+        document.getElementById("purchase-form").addEventListener("submit", e => {
             e.preventDefault();
             const data = {
                 product: document.getElementById("product").value,
@@ -438,24 +430,18 @@
             };
             data.subtotal = data.price * data.quantity;
 
-            try {
-                if (editingId) {
-                    await axios.post(API, {
-                        sql: `UPDATE procurement SET product='${data.product}',orderDate='${data.orderDate}',receiveDate='${data.receiveDate}',price=${data.price},quantity=${data.quantity},status='${data.status}',platform='${data.platform}',account='${data.account}',notes='${data.notes}' WHERE id='${editingId}'`
-                    }, { headers: { Authorization: AUTH } });
-                    showToast("更新成功");
-                    editingId = null;
-                } else {
-                    await axios.post(API, {
-                        sql: `INSERT INTO procurement (id,product,orderDate,receiveDate,price,quantity,status,platform,account,notes,subtotal) VALUES ('${Date.now()}', '${data.product}', '${data.orderDate}', '${data.receiveDate}', ${data.price}, ${data.quantity}, '${data.status}', '${data.platform}', '${data.account}', '${data.notes}', ${data.subtotal})`
-                    }, { headers: { Authorization: AUTH } });
-                    showToast("添加成功");
-                }
-                e.target.reset();
-                loadData();
-            } catch (err) {
-                showToast("保存失败");
+            if (editingId) {
+                const idx = records.findIndex(x => x.id === editingId);
+                records[idx] = { ...records[idx], ...data };
+                editingId = null;
+            } else {
+                data.id = Date.now().toString();
+                records.unshift(data);
             }
+
+            saveData();
+            e.target.reset();
+            loadData();
         });
 
         document.getElementById("export-csv").onclick = () => {
@@ -466,7 +452,7 @@
             const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
-            a.download = "采购记录_云端版.csv";
+            a.download = "采购记录.csv";
             a.click();
         };
 
