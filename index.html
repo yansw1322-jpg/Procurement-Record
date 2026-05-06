@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>采购记录 - 多人协同版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.544.0/dist/umd/lucide.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        :root {
+            --color-up: #10b981;
+            --color-down: #ef4444;
+            --color-neutral: #6b7280;
+            --color-primary: #3b82f6;
+            --color-secondary: #8b5cf6;
+            --color-warning: #f59e0b;
+            --background-color: #f8fafc;
+            --card-background: #ffffff;
+            --text-color: #1e293b;
+            --muted-text-color: #64748b;
+        }
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            font-family: 'Inter', sans-serif;
+        }
+        .dashboard-card {
+            background-color: var(--card-background);
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            transition: all 0.3s ease;
+            border-radius: 0.5rem;
+        }
+        .dashboard-card:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .card-header {
+            border-bottom: 1px solid #e2e8f0;
+            padding: 1rem 1.5rem;
+            font-weight: 600;
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+        }
+        .card-body {
+            padding: 1.5rem;
+        }
+        .btn-primary {
+            background-color: var(--color-primary);
+            color: white;
+            transition: background-color 0.3s ease;
+        }
+        .btn-primary:hover {
+            background-color: #2563eb;
+        }
+        .form-input, .form-select {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+        .table-container {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        th {
+            background-color: #f9fafb;
+            font-weight: 600;
+            color: var(--muted-text-color);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        tr:hover {
+            background-color: #f9fafb;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25em 0.6em;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .badge-success {
+            background-color: #d1fae5;
+            color: #065f46;
+        }
+        .badge-warning {
+            background-color: #fef3c7;
+            color: #92400e;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            background-color: #333;
+            color: white;
+            border-radius: 5px;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        .toast.show {
+            opacity: 1;
+        }
+        .clip-path-polygon {
+            clip-path: polygon(0% 0%, 95% 0%, 100% 5%, 100% 100%, 5% 100%, 0% 95%);
+        }
+        .stat-card {
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background-color: var(--color-primary);
+        }
+        .stat-value {
+            font-size: 1.875rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--muted-text-color);
+        }
+        .stat-desc {
+            font-size: 0.75rem;
+            color: var(--muted-text-color);
+            margin-top: 0.25rem;
+        }
+        .trend-up {
+            color: var(--color-up);
+        }
+        .trend-down {
+            color: var(--color-down);
+        }
+        .header-zigzag {
+            position: relative;
+        }
+        .header-zigzag::after {
+            content: '';
+            position: absolute;
+            bottom: -0.5rem;
+            left: 0;
+            width: 100%;
+            height: 6px;
+            background-image: linear-gradient(135deg, var(--color-primary) 25%, transparent 25%), linear-gradient(225deg, var(--color-primary) 25%, transparent 25%);
+            background-size: 12px 12px;
+            background-position: 0 0, 0 6px;
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="min-h-screen flex flex-col">
+        <header class="bg-white shadow-sm">
+            <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900 header-zigzag inline-block">采购记录管理</h1>
+                        <p class="text-sm text-gray-500 mt-1">多人云端协同版</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <button id="refresh-data" class="p-2 rounded-full hover:bg-gray-100">
+                            <i data-lucide="refresh-cw" class="w-5 h-5 text-gray-600"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="dashboard-card stat-card p-6">
+                    <h3 class="stat-label">总支出</h3>
+                    <p class="stat-value" id="total-spent">¥0.00</p>
+                </div>
+                <div class="dashboard-card stat-card p-6">
+                    <h3 class="stat-label">待收货</h3>
+                    <p class="stat-value" id="pending-items">0</p>
+                </div>
+                <div class="dashboard-card stat-card p-6">
+                    <h3 class="stat-label">总订单数</h3>
+                    <p class="stat-value" id="total-orders">0</p>
+                </div>
+                <div class="dashboard-card stat-card p-6">
+                    <h3 class="stat-label">常用平台</h3>
+                    <p class="stat-value" id="preferred-platform">-</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div class="lg:col-span-1">
+                    <div class="dashboard-card clip-path-polygon">
+                        <div class="card-header">添加新记录</div>
+                        <div class="card-body">
+                            <form id="purchase-form" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">产品</label>
+                                    <select id="product" class="form-select" required>
+                                        <option>自由主张</option>
+                                        <option>露露灵一代</option>
+                                        <option>露露灵二代</option>
+                                        <option>兽仔三代</option>
+                                        <option>兽仔四代</option>
+                                        <option>兽仔五代</option>
+                                        <option>兽仔六代</option>
+                                        <option>妮撒</option>
+                                        <option>一万次</option>
+                                        <option>甜一</option>
+                                        <option>甜二</option>
+                                        <option>造物之心</option>
+                                        <option>终末祝福</option>
+                                        <option>米希娅</option>
+                                    </select>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">下单日期</label>
+                                        <input type="date" id="order-date" class="form-input" required>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">收货日期</label>
+                                        <input type="date" id="receive-date" class="form-input">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">价格</label>
+                                        <input type="number" id="price" step="0.01" class="form-input" required>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">数量</label>
+                                        <input type="number" id="quantity" value="1" min="1" class="form-input" required>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                                    <select id="status" class="form-select" required>
+                                        <option>未到货</option>
+                                        <option>已到货</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">平台</label>
+                                    <select id="platform" class="form-select" required>
+                                        <option>淘宝</option>
+                                        <option>拼多多</option>
+                                        <option>抖音</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">购买账号</label>
+                                    <input type="text" id="account" class="form-input">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">备注</label>
+                                    <textarea id="notes" rows="2" class="form-input"></textarea>
+                                </div>
+                                <button type="submit" class="btn-primary w-full py-2 rounded-md">保存记录</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-3">
+                    <div class="dashboard-card">
+                        <div class="card-header flex justify-between items-center">
+                            <div>采购记录列表</div>
+                            <button id="export-csv" class="text-sm bg-gray-100 px-3 py-1 rounded">导出 CSV</button>
+                        </div>
+                        <div class="p-4">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                <select id="filter-platform" class="form-select text-sm">
+                                    <option value="">全部平台</option>
+                                    <option>淘宝</option>
+                                    <option>拼多多</option>
+                                    <option>抖音</option>
+                                </select>
+                                <select id="filter-status" class="form-select text-sm">
+                                    <option value="">全部状态</option>
+                                    <option>已到货</option>
+                                    <option>未到货</option>
+                                </select>
+                            </div>
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>产品</th>
+                                            <th>日期</th>
+                                            <th>价格</th>
+                                            <th>状态</th>
+                                            <th>平台</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="table-body"></tbody>
+                                </table>
+                            </div>
+                            <div id="empty" class="py-10 text-center text-gray-400">暂无数据</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <div id="toast" class="toast">操作成功</div>
+
+    <script>
+        const API = "https://api.apifox.com/v1/cloud-db/query/65e756f97c483d2027a9f8a9";
+        const AUTH = "Bearer sk-85e756f97c483d2027a9f8a9";
+
+        let records = [];
+        let editingId = null;
+
+        function showToast(msg) {
+            const t = document.getElementById("toast");
+            t.textContent = msg;
+            t.classList.add("show");
+            setTimeout(() => t.classList.remove("show"), 2000);
+        }
+
+        async function loadData() {
+            try {
+                const res = await axios.post(API, {
+                    sql: "SELECT * FROM procurement ORDER BY createdAt DESC"
+                }, { headers: { Authorization: AUTH } });
+                records = res.data.data || [];
+                renderTable();
+                updateStats();
+                showToast("数据已同步");
+            } catch (e) {
+                showToast("加载失败");
+            }
+        }
+
+        function renderTable() {
+            const body = document.getElementById("table-body");
+            const empty = document.getElementById("empty");
+            body.innerHTML = "";
+
+            let fp = document.getElementById("filter-platform").value;
+            let fs = document.getElementById("filter-status").value;
+            let list = records;
+
+            if (fp) list = list.filter(x => x.platform === fp);
+            if (fs) list = list.filter(x => x.status === fs);
+
+            if (list.length === 0) { empty.style.display = "block"; return; }
+            empty.style.display = "none";
+
+            list.forEach(item => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${item.product}</td>
+                    <td>${item.orderDate}</td>
+                    <td>¥${parseFloat(item.price).toFixed(2)}</td>
+                    <td><span class="badge ${item.status==='已到货'?'badge-success':'badge-warning'}">${item.status}</span></td>
+                    <td>${item.platform}</td>
+                    <td class="space-x-2">
+                        <button onclick="edit('${item.id}')" class="text-blue-600">编辑</button>
+                        <button onclick="del('${item.id}')" class="text-red-600">删除</button>
+                    </td>
+                `;
+                body.appendChild(tr);
+            });
+        }
+
+        function updateStats() {
+            const total = records.reduce((s, i) => s + (i.price * i.quantity), 0);
+            const pending = records.filter(i => i.status === "未到货").length;
+            document.getElementById("total-spent").innerText = `¥${total.toFixed(2)}`;
+            document.getElementById("pending-items").innerText = pending;
+            document.getElementById("total-orders").innerText = records.length;
+        }
+
+        window.edit = async (id) => {
+            const item = records.find(x => x.id === id);
+            if (!item) return;
+            editingId = id;
+            document.getElementById("product").value = item.product;
+            document.getElementById("order-date").value = item.orderDate;
+            document.getElementById("receive-date").value = item.receiveDate || "";
+            document.getElementById("price").value = item.price;
+            document.getElementById("quantity").value = item.quantity;
+            document.getElementById("status").value = item.status;
+            document.getElementById("platform").value = item.platform;
+            document.getElementById("account").value = item.account || "";
+            document.getElementById("notes").value = item.notes || "";
+            showToast("已加载编辑数据");
+        };
+
+        window.del = async (id) => {
+            if (!confirm("确定删除？")) return;
+            await axios.post(API, {
+                sql: `DELETE FROM procurement WHERE id='${id}'`
+            }, { headers: { Authorization: AUTH } });
+            showToast("删除成功");
+            loadData();
+        };
+
+        document.getElementById("purchase-form").addEventListener("submit", async e => {
+            e.preventDefault();
+            const data = {
+                product: document.getElementById("product").value,
+                orderDate: document.getElementById("order-date").value,
+                receiveDate: document.getElementById("receive-date").value,
+                price: parseFloat(document.getElementById("price").value),
+                quantity: parseInt(document.getElementById("quantity").value),
+                status: document.getElementById("status").value,
+                platform: document.getElementById("platform").value,
+                account: document.getElementById("account").value,
+                notes: document.getElementById("notes").value
+            };
+            data.subtotal = data.price * data.quantity;
+
+            try {
+                if (editingId) {
+                    await axios.post(API, {
+                        sql: `UPDATE procurement SET product='${data.product}',orderDate='${data.orderDate}',receiveDate='${data.receiveDate}',price=${data.price},quantity=${data.quantity},status='${data.status}',platform='${data.platform}',account='${data.account}',notes='${data.notes}' WHERE id='${editingId}'`
+                    }, { headers: { Authorization: AUTH } });
+                    showToast("更新成功");
+                    editingId = null;
+                } else {
+                    await axios.post(API, {
+                        sql: `INSERT INTO procurement (id,product,orderDate,receiveDate,price,quantity,status,platform,account,notes,subtotal) VALUES ('${Date.now()}', '${data.product}', '${data.orderDate}', '${data.receiveDate}', ${data.price}, ${data.quantity}, '${data.status}', '${data.platform}', '${data.account}', '${data.notes}', ${data.subtotal})`
+                    }, { headers: { Authorization: AUTH } });
+                    showToast("添加成功");
+                }
+                e.target.reset();
+                loadData();
+            } catch (err) {
+                showToast("保存失败");
+            }
+        });
+
+        document.getElementById("export-csv").onclick = () => {
+            let csv = "\uFEFF产品,下单日期,收货日期,价格,数量,状态,平台,账号,备注,小计\n";
+            records.forEach(r => {
+                csv += `${r.product},${r.orderDate},${r.receiveDate||""},${r.price},${r.quantity},${r.status},${r.platform},${r.account||""},${r.notes||""},${r.subtotal}\n`;
+            });
+            const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "采购记录_云端版.csv";
+            a.click();
+        };
+
+        document.getElementById("refresh-data").onclick = loadData;
+        document.getElementById("filter-platform").onchange = renderTable;
+        document.getElementById("filter-status").onchange = renderTable;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            lucide.createIcons();
+            document.getElementById("order-date").valueAsDate = new Date();
+            loadData();
+            setInterval(loadData, 5000);
+        });
+    </script>
+</body>
+</html>
