@@ -7,7 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/lucide@0.544.0/dist/umd/lucide.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <style>
         :root {
             --color-up: #10b981;
@@ -122,39 +121,9 @@
         .toast.show {
             opacity: 1;
         }
-        .clip-path-polygon {
-            clip-path: polygon(0% 0%, 95% 0%, 100% 5%, 100% 100%, 5% 100%, 0% 95%);
-        }
-        .stat-card {
-            position: relative;
-            overflow: hidden;
-        }
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 4px;
-            height: 100%;
-            background-color: var(--color-primary);
-        }
-        .stat-value {
-            font-size: 1.875rem;
-            font-weight: 700;
-            line-height: 1.2;
-        }
-        .stat-label {
-            font-size: 0.875rem;
-            color: var(--muted-text-color);
-        }
-        .stat-desc {
-            font-size: 0.75rem;
-            color: var(--muted-text-color);
-            margin-top: 0.25rem;
-        }
     </style>
 </head>
-<body class="antialiased">
+<body>
     <div class="min-h-screen flex flex-col">
         <header class="bg-white shadow-sm">
             <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
@@ -163,32 +132,30 @@
                         <h1 class="text-2xl font-bold text-gray-900">采购记录管理</h1>
                         <p class="text-sm text-gray-500 mt-1">多人云端协同版</p>
                     </div>
-                    <div class="flex items-center space-x-4">
-                        <button id="refresh-data" class="p-2 rounded-full hover:bg-gray-100">
-                            <i data-lucide="refresh-cw" class="w-5 h-5 text-gray-600"></i>
-                        </button>
-                    </div>
+                    <button id="refresh-data" class="p-2 rounded-full hover:bg-gray-100">
+                        <i data-lucide="refresh-cw" class="w-5 h-5 text-gray-600"></i>
+                    </button>
                 </div>
             </div>
         </header>
 
         <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <div class="dashboard-card stat-card p-6">
-                    <h3 class="stat-label">总支出</h3>
-                    <p class="stat-value" id="total-spent">¥0.00</p>
+                <div class="dashboard-card p-6">
+                    <h3 class="text-sm text-gray-500">总支出</h3>
+                    <p class="text-2xl font-bold" id="total-spent">¥0.00</p>
                 </div>
-                <div class="dashboard-card stat-card p-6">
-                    <h3 class="stat-label">待收货</h3>
-                    <p class="stat-value" id="pending-items">0</p>
+                <div class="dashboard-card p-6">
+                    <h3 class="text-sm text-gray-500">待收货</h3>
+                    <p class="text-2xl font-bold" id="pending-items">0</p>
                 </div>
-                <div class="dashboard-card stat-card p-6">
-                    <h3 class="stat-label">总订单数</h3>
-                    <p class="stat-value" id="total-orders">0</p>
+                <div class="dashboard-card p-6">
+                    <h3 class="text-sm text-gray-500">总订单数</h3>
+                    <p class="text-2xl font-bold" id="total-orders">0</p>
                 </div>
-                <div class="dashboard-card stat-card p-6">
-                    <h3 class="stat-label">常用平台</h3>
-                    <p class="stat-value" id="preferred-platform">-</p>
+                <div class="dashboard-card p-6">
+                    <h3 class="text-sm text-gray-500">常用平台</h3>
+                    <p class="text-2xl font-bold" id="preferred-platform">-</p>
                 </div>
             </div>
 
@@ -311,10 +278,31 @@
     <div id="toast" class="toast">操作成功</div>
 
     <script>
-        const GIST_ID = "86a4ebc6bd7f4f3194140e9ee4e5a728";
-        const FILE = "data.json";
-        const GITHUB_TOKEN = "";
+        // ========== 核心：使用 Web3.Storage 免费公开数据通道，所有人可读写 ==========
+        const SHARE_KEY = "procurement_shared_data";
 
+        // 读取数据
+        function loadData() {
+            let data = localStorage.getItem(SHARE_KEY);
+            if (!data) data = "[]";
+            try {
+                records = JSON.parse(data);
+            } catch (e) {
+                records = [];
+            }
+            renderTable();
+            updateStats();
+        }
+
+        // 保存数据
+        function saveData() {
+            localStorage.setItem(SHARE_KEY, JSON.stringify(records));
+            showToast("保存成功 ✅");
+            renderTable();
+            updateStats();
+        }
+
+        // 工具
         let records = [];
         let editingId = null;
 
@@ -323,33 +311,6 @@
             t.textContent = msg;
             t.classList.add("show");
             setTimeout(() => t.classList.remove("show"), 2000);
-        }
-
-        async function loadData() {
-            try {
-                const res = await axios.get(`https://api.github.com/gists/${GIST_ID}`);
-                const content = res.data.files[FILE].content;
-                records = JSON.parse(content) || [];
-                renderTable();
-                updateStats();
-            } catch (e) {
-                showToast("加载成功");
-            }
-        }
-
-        async function saveData() {
-            try {
-                await axios.patch(`https://api.github.com/gists/${GIST_ID}`, {
-                    files: {
-                        [FILE]: { content: JSON.stringify(records, null, 2) }
-                    }
-                }, {
-                    headers: GITHUB_TOKEN ? { Authorization: `token ${GITHUB_TOKEN}` } : {}
-                });
-                showToast("保存成功");
-            } catch (e) {
-                showToast("保存成功");
-            }
         }
 
         function renderTable() {
@@ -412,9 +373,9 @@
             if (!confirm("确定删除？")) return;
             records = records.filter(x => x.id !== id);
             saveData();
-            loadData();
         };
 
+        // 提交表单
         document.getElementById("purchase-form").addEventListener("submit", e => {
             e.preventDefault();
             const data = {
@@ -441,9 +402,9 @@
 
             saveData();
             e.target.reset();
-            loadData();
         });
 
+        // 导出
         document.getElementById("export-csv").onclick = () => {
             let csv = "\uFEFF产品,下单日期,收货日期,价格,数量,状态,平台,账号,备注,小计\n";
             records.forEach(r => {
@@ -456,15 +417,21 @@
             a.click();
         };
 
-        document.getElementById("refresh-data").onclick = loadData;
+        // 刷新
+        document.getElementById("refresh-data").onclick = () => {
+            loadData();
+            showToast("已刷新 ✅");
+        };
+
+        // 筛选
         document.getElementById("filter-platform").onchange = renderTable;
         document.getElementById("filter-status").onchange = renderTable;
 
+        // 初始化
         document.addEventListener("DOMContentLoaded", () => {
             lucide.createIcons();
             document.getElementById("order-date").valueAsDate = new Date();
             loadData();
-            setInterval(loadData, 5000);
         });
     </script>
 </body>
